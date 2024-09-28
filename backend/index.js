@@ -10,8 +10,9 @@ app.use(cors());
 app.use(express.json());
 
 let generatedNumber = null;
-let userStart = 0; // Num user input
-let userEnd = 0; //  Num user input
+let userStart = 0;
+let userEnd = 0;
+let generatedNumbers = []; // Array to store previously generated numbers
 
 app.use(express.static(path.join(__dirname, '../frontend/build')));
 
@@ -29,18 +30,51 @@ app.post('/generate', (req, res) => {
 
   // Validate start and end
   if (start !== undefined && end !== undefined && !isNaN(start) && !isNaN(end)) {
-    generatedNumber = Math.floor(Math.random() * (end - start + 1)) + start;
-    userStart = start;
-    userEnd = end;
+    // If the range changes, reset the generated numbers array
+    if (start !== userStart || end !== userEnd) {
+      generatedNumbers = [];
+      userStart = start;
+      userEnd = end;
+    }
 
-    console.log(start, end)
+    // Function to generate a unique number
+    const generateUniqueNumber = () => {
+      let num;
+      if (generatedNumbers.length === (end - start + 1)) {
+        return null; // Return null if all numbers have been generated
+      }
 
-    io.emit('newNumber', generatedNumber);
+      do {
+        num = Math.floor(Math.random() * (end - start + 1)) + start;
+      } while (generatedNumbers.includes(num)); // Ensure the number is unique
+      return num;
+    };
 
-    res.json({ success: true, message: 'Number generated', generatedNumber });
+    generatedNumber = generateUniqueNumber();
+
+    if (generatedNumber !== null) {
+      generatedNumbers.push(generatedNumber); // Store the generated number
+      io.emit('newNumber', generatedNumber);
+
+      res.json({ success: true, message: 'Number generated', generatedNumber });
+    } else {
+      res.status(400).json({ success: false, message: 'All numbers have been generated' });
+    }
   } else {
     res.status(400).json({ success: false, message: 'Invalid input' });
   }
+});
+
+app.get('/numbers', (req, res) => {
+  res.json({ generatedNumbers, start: userStart, end: userEnd });
+});
+
+app.post('/reset', (req, res) => {
+  generatedNumbers = [];
+  userStart = 0;
+  userEnd = 0;
+  io.emit('resetNumbers');
+  res.json({ success: true, message: 'Numbers array reset' });
 });
 
 // GET endpoint to fetch the generated number
@@ -52,6 +86,7 @@ app.get('/display', (req, res) => {
   }
 });
 
+// Fallback route to serve the frontend
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
 });
